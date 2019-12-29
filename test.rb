@@ -24,12 +24,15 @@ class CurrencyLayer
   end
 end
 
+spread = BigDecimal("0.05")
+
 
 # read -p "Enter Bitso API key: " -s BITSO_API_KEY && export BITSO_API_KEY && echo && read -p "Enter Bitso API secret: " -s BITSO_API_SECRET && export BITSO_API_SECRET && echo && read -p "Enter CL API key: " -s CL_API && export CL_API && echo
 rest_api = Bitso::APIv3::Client.new(ENV["BITSO_API_KEY"], ENV["BITSO_API_SECRET"])
 cl = CurrencyLayer.new(ENV["CL_API"])
 quote = cl.get_quote
 puts quote
+puts rest_api.balance
 
 #puts rest_api.available_books
 #puts rest_api.available_books(:ws => "1")
