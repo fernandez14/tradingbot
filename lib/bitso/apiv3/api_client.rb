@@ -37,6 +37,14 @@ module Bitso
         out
       end
 
+      def balance(params = {})
+        out = nil
+        get("/v3/balance/", params) do |resp|
+          out = response_object(resp)
+          yield(out, resp) if block_given?
+        end
+        out
+      end
 
       private
 
