@@ -1,6 +1,7 @@
 #!/usr/bin/ruby
 
 require 'bitso/apiv3'
+require 'bigdecimal'
 
 class CurrencyLayer
   def initialize(api_key)
@@ -36,4 +37,16 @@ puts quote
 #puts rest_api.orderbook
 #puts rest_api.orderbook(:book => "eth_mxn").asks
 
+ob = rest_api.orderbook(:book => "btc_mxn")
 
+puts "asks"
+ob.asks.each do |a|
+  ars_p = BigDecimal(a["price"]).mult(quote, 5).mult(BigDecimal("1").add(spread, 5), 5)
+  puts "Orig: #{a["price"]} vs new: #{ars_p.to_s("F")}"
+end
+
+puts "bids"
+ob.bids.each do |b|
+  ars_p = BigDecimal(b["price"]).mult(quote, 5).mult(BigDecimal("1").sub(spread, 5), 5)
+  puts "Orig: #{b["price"]} vs new: #{ars_p.to_s("F")}"
+end
