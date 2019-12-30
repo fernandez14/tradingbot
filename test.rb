@@ -52,9 +52,22 @@ def calculateSpreads
   btc_in_ars = BigDecimal(balances["btc"]["total"]).mult(mxn_btc, 8).mult(ars_mxn, 8)
   total_balance_in_ars = ars_balance.add(btc_in_ars, 8)
   btc_percentage = btc_in_ars.div(total_balance_in_ars, 8)
+  puts "BTC is at #{btc_percentage.mult(BigDecimal("100"), 2).to_s("F")}%"
+  puts "ARS is at #{BigDecimal("100").sub(btc_percentage.mult(BigDecimal("100"), 2), 2).to_s("F")}%"
 
-  puts btc_percentage.to_s("F")
-  Process.exit
+  h = Hash.new
+  h["bid_spread"] = $spread
+  h["ask_spread"] = $spread
+  if (btc_percentage > BigDecimal("0.5"))
+    puts "Reducing ask spread"
+    h["ask_spread"] = -$spread/BigDecimal("0.5")*btc_percentage+BigDecimal("2")*$spread
+  elsif (btc_percentage < BigDecimal("0.5"))
+    puts "Reducing bids spread"
+    h["bid_spread"] = -$spread/BigDecimal("0.5")*(BigDecimal("1")-btc_percentage)+BigDecimal("2")*$spread
+  end
+  puts "Setting bid spread to #{(h["bid_spread"]*BigDecimal("100")).to_s("F")} %"
+  puts "Setting ask spread to #{(h["ask_spread"]*BigDecimal("100")).to_s("F")} %"
+  return h
 end
 
 $spread = BigDecimal("0.05")
