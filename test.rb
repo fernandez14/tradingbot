@@ -70,9 +70,17 @@ def calculateSpreads(balances, ars_mxn)
   return h
 end
 
-$min_spread = BigDecimal("0.01")
-$max_spread = BigDecimal("0.10")
-$order_num_threshold = 20 # lower to make orders prices tigher, increase to spread order prices
+def getLimits
+  books = $bitso.available_books
+  h = Hash.new
+  books.each do |b|
+    return b if b["book"] == "btc_ars"
+  end
+end
+
+$min_spread = BigDecimal("0.28")
+$max_spread = BigDecimal("0.40")
+$order_num_threshold = 10 # lower to make fewer orders with tighter, increase to spread orders and prices
 
 # read -p "Enter Bitso API key: " -s BITSO_API_KEY && export BITSO_API_KEY && echo && read -p "Enter Bitso API secret: " -s BITSO_API_SECRET && export BITSO_API_SECRET && echo && read -p "Enter CL API key: " -s CL_API && export CL_API && echo
 $bitso = Bitso::APIv3::Client.new(ENV["BITSO_API_KEY"], ENV["BITSO_API_SECRET"])
@@ -94,6 +102,7 @@ while true
 
   # Cancel open orders outside of the min/max prices
   open_orders = $bitso.open_orders(:limit => 100)
+  puts "There are #{open_orders.length} open orders at this time"
   orders = []
   open_orders.each do |o|
     price = BigDecimal(o["price"])
@@ -103,22 +112,67 @@ while true
       orders.push(o["oid"]) if price < min_ask_price || price > max_ask_price
     end
   end
+  puts "Cancelling #{orders.length} orders that are out of the price range"
   $bitso.cancel_order(orders)
 
-  Process.exit
-
-  bid = $bitso.ask("0.001", "5123458", :book => "btc_ars")
+  balances = getBalances
+  limits = getLimits
   ob = $bitso.orderbook(:book => "btc_mxn")
 
-  puts "asks"
-  ob.asks.each do |a|
-    ars_p = BigDecimal(a["price"]).mult(quote, 5).mult(BigDecimal("1").add(spread, 5), 5)
-    puts "Orig: #{a["price"]} vs new: #{ars_p.to_s("F")}"
+  btc_balance = BigDecimal(balances["btc"]["available"])
+  if btc_balance >= BigDecimal(limits["minimum_amount"])
+    placed = BigDecimal("0")
+    total = BigDecimal("0")
+    count = 0
+    ob.asks.each do |a|
+      break if count >= $order_num_threshold
+      total += BigDecimal(a["amount"])
+      count += 1
+    end
+    count = 0
+    ob.asks.each do |a|
+      break if count >= $order_num_threshold
+      amount = (BigDecimal(a["amount"])*BigDecimal(a["amount"])/total).truncate(8)
+      next if amount <= BigDecimal(limits["minimum_amount"])
+      next if amount >= (btc_balance - placed)
+
+      price = (BigDecimal(a["price"]) * ars_mxn * (BigDecimal("1") + spreads["ask_spread"])).truncate(2)
+
+      puts "Adding order to sell #{amount.to_s("F")} BTC at #{price.to_s("F")} ARS"
+      $bitso.ask(amount.to_s("F"), price.to_s("F"), :book => "btc_ars")
+      placed += amount
+      count += 1
+    end
   end
 
-  puts "bids"
-  ob.bids.each do |b|
-    ars_p = BigDecimal(b["price"]).mult(quote, 5).mult(BigDecimal("1").sub(spread, 5), 5)
-    puts "Orig: #{b["price"]} vs new: #{ars_p.to_s("F")}"
+  ars_balance = BigDecimal(balances["ars"]["available"])
+  if ars_balance >= BigDecimal(limits["minimum_value"])
+    placed = BigDecimal("0")
+    total = BigDecimal("0")
+    count = 0
+    ob.bids.each do |b|
+      break if count >= $order_num_threshold
+      value = BigDecimal(b["amount"])*BigDecimal(b["price"])
+      total += value
+      count += 1
+    end
+    count = 0
+    ob.bids.each do |b|
+      break if count >= $order_num_threshold
+      value = BigDecimal(b["amount"])*BigDecimal(b["price"])
+      amount = (BigDecimal(b["amount"])*value/total).truncate(8)
+      price = (BigDecimal(b["price"]) * ars_mxn * (BigDecimal("1") + spreads["ask_spread"])).truncate(2)
+      value_of_new_order = amount * value
+
+      next if value_of_new_order <= BigDecimal(limits["minimum_value"])
+      next if value_of_new_order > (ars_balance - placed)
+
+      puts "Adding order to buy #{amount.to_s("F")} BTC at #{price.to_s("F")} ARS"
+      $bitso.bid(amount.to_s("F"), price.to_s("F"), :book => "btc_ars")
+      placed += value_of_new_order
+      count += 1
+    end
   end
+
+  sleep 10
 end

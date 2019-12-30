@@ -93,7 +93,6 @@ module Bitso
         out = nil
         orders = order_ids.join("-")
         delete("/v3/orders/#{orders}") do |resp|
-          puts resp
           out = response_object(resp)
           yield(out, resp) if block_given?
         end
