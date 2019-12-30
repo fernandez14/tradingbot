@@ -46,6 +46,27 @@ module Bitso
         out
       end
 
+      def open_orders(params = {})
+        out = nil
+        get("/v3/open_orders/", params) do |resp|
+          out = response_collection(resp)
+          yield(out, resp) if block_given?
+        end
+        out
+      end
+
+      def cancel_order(order_ids)
+        return if order_ids == nil || order_ids.length == 0
+        out = nil
+        orders = order_ids.join("-")
+        delete("/v3/orders/#{orders}") do |resp|
+          puts resp
+          out = response_object(resp)
+          yield(out, resp) if block_given?
+        end
+        out
+      end
+
       private
 
       def response_collection(resp)
@@ -91,6 +112,24 @@ module Bitso
           out.instance_eval { @response = resp }
           add_metadata(out)
 
+          yield(out)
+        end
+      end
+
+      def post(path, params = {})
+        http_verb('POST', path, params.to_json) do |resp|
+          out = resp.body
+          out.instance_eval { @response = resp }
+          add_metadata(out)
+          yield(out)
+        end
+      end
+
+      def delete(path)
+        http_verb('DELETE', path) do |resp|
+          out = resp.body
+          out.instance_eval { @response = resp }
+          add_metadata(out)
           yield(out)
         end
       end
