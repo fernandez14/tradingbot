@@ -56,41 +56,45 @@ def calculateSpreads
   puts "ARS is at #{BigDecimal("100").sub(btc_percentage.mult(BigDecimal("100"), 2), 2).to_s("F")}%"
 
   h = Hash.new
-  h["bid_spread"] = $spread
-  h["ask_spread"] = $spread
+  h["bid_spread"] = $max_spread
+  h["ask_spread"] = $max_spread
+  m = ($min_spread-$max_spread)/BigDecimal("0.5")
+  b = $min_spread-($min_spread-$max_spread)/BigDecimal("0.5")
   if (btc_percentage > BigDecimal("0.5"))
     puts "Reducing ask spread"
-    h["ask_spread"] = -$spread/BigDecimal("0.5")*btc_percentage+BigDecimal("2")*$spread
+    h["ask_spread"] = m*btc_percentage+b
   elsif (btc_percentage < BigDecimal("0.5"))
     puts "Reducing bids spread"
-    h["bid_spread"] = -$spread/BigDecimal("0.5")*(BigDecimal("1")-btc_percentage)+BigDecimal("2")*$spread
+    h["bid_spread"] = m*(BigDecimal("1")-btc_percentage)+b
   end
   puts "Setting bid spread to #{(h["bid_spread"]*BigDecimal("100")).to_s("F")} %"
   puts "Setting ask spread to #{(h["ask_spread"]*BigDecimal("100")).to_s("F")} %"
   return h
 end
 
-$spread = BigDecimal("0.05")
+$min_spread = BigDecimal("0.01")
+$max_spread = BigDecimal("0.05")
 
 
 # read -p "Enter Bitso API key: " -s BITSO_API_KEY && export BITSO_API_KEY && echo && read -p "Enter Bitso API secret: " -s BITSO_API_SECRET && export BITSO_API_SECRET && echo && read -p "Enter CL API key: " -s CL_API && export CL_API && echo
 $bitso = Bitso::APIv3::Client.new(ENV["BITSO_API_KEY"], ENV["BITSO_API_SECRET"])
 $cl = CurrencyLayer.new(ENV["CL_API"])
 
-calculateSpreads
+while true
+  calculateSpreads
 
+  Process.exit
+  ob = rest_api.orderbook(:book => "btc_mxn")
 
-Process.exit
-ob = rest_api.orderbook(:book => "btc_mxn")
+  puts "asks"
+  ob.asks.each do |a|
+    ars_p = BigDecimal(a["price"]).mult(quote, 5).mult(BigDecimal("1").add(spread, 5), 5)
+    puts "Orig: #{a["price"]} vs new: #{ars_p.to_s("F")}"
+  end
 
-puts "asks"
-ob.asks.each do |a|
-  ars_p = BigDecimal(a["price"]).mult(quote, 5).mult(BigDecimal("1").add(spread, 5), 5)
-  puts "Orig: #{a["price"]} vs new: #{ars_p.to_s("F")}"
-end
-
-puts "bids"
-ob.bids.each do |b|
-  ars_p = BigDecimal(b["price"]).mult(quote, 5).mult(BigDecimal("1").sub(spread, 5), 5)
-  puts "Orig: #{b["price"]} vs new: #{ars_p.to_s("F")}"
+  puts "bids"
+  ob.bids.each do |b|
+    ars_p = BigDecimal(b["price"]).mult(quote, 5).mult(BigDecimal("1").sub(spread, 5), 5)
+    puts "Orig: #{b["price"]} vs new: #{ars_p.to_s("F")}"
+  end
 end
