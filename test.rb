@@ -93,11 +93,11 @@ while true
   ob = $bitso.orderbook(:book => "btc_mxn")
 
   # Calculate min/max prices on bids and asks
-  min_bid_price = BigDecimal(ob.bids[$order_num_threshold]["price"])*ars_mxn*(BigDecimal("1")-spreads["bid_spread"])
-  max_bid_price = BigDecimal(ob.bids[0]["price"])*ars_mxn*(BigDecimal("1")-spreads["bid_spread"])
+  min_bid_price = (BigDecimal(ob.bids[$order_num_threshold]["price"])*ars_mxn*(BigDecimal("1")-spreads["bid_spread"]))*BigDecimal("0.99")
+  max_bid_price = (BigDecimal(ob.bids[0]["price"])*ars_mxn*(BigDecimal("1")-spreads["bid_spread"]))*BigDecimal("1.01")
   puts "Bid Prices: #{min_bid_price.to_s("F")} - #{max_bid_price.to_s("F")}"
-  min_ask_price = BigDecimal(ob.asks[0]["price"])*ars_mxn*(BigDecimal("1")+spreads["ask_spread"])
-  max_ask_price = BigDecimal(ob.asks[$order_num_threshold]["price"])*ars_mxn*(BigDecimal("1")+spreads["ask_spread"])
+  min_ask_price = (BigDecimal(ob.asks[0]["price"])*ars_mxn*(BigDecimal("1")+spreads["ask_spread"]))*BigDecimal("0.99")
+  max_ask_price = (BigDecimal(ob.asks[$order_num_threshold]["price"])*ars_mxn*(BigDecimal("1")+spreads["ask_spread"]))*BigDecimal("1.01")
   puts "Ask Prices: #{min_ask_price.to_s("F")} - #{max_ask_price.to_s("F")}"
 
   # Cancel open orders outside of the min/max prices
