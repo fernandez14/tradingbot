@@ -117,7 +117,6 @@ while true
 
   balances = getBalances
   limits = getLimits
-  ob = $bitso.orderbook(:book => "btc_mxn")
 
   btc_balance = BigDecimal(balances["btc"]["available"])
   if btc_balance >= BigDecimal(limits["minimum_amount"])
@@ -161,11 +160,12 @@ while true
       break if count >= $order_num_threshold
       value = BigDecimal(b["amount"])*BigDecimal(b["price"])
       amount = (BigDecimal(b["amount"])*value/total).truncate(8)
-      price = (BigDecimal(b["price"]) * ars_mxn * (BigDecimal("1") + spreads["ask_spread"])).truncate(2)
-      value_of_new_order = amount * value
+      price = (BigDecimal(b["price"]) * ars_mxn * (BigDecimal("1") - spreads["bid_spread"])).truncate(2)
+      value_of_new_order = amount * price
 
       next if value_of_new_order <= BigDecimal(limits["minimum_value"])
       next if value_of_new_order > (ars_balance - placed)
+      next if amount <= BigDecimal(limits["minimum_amount"])
 
       puts "Adding order to buy #{amount.to_s("F")} BTC at #{price.to_s("F")} ARS"
       $bitso.bid(amount.to_s("F"), price.to_s("F"), :book => "btc_ars")
