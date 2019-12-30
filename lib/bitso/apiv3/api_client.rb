@@ -46,6 +46,39 @@ module Bitso
         out
       end
 
+      def bid(amt, price, params = {})
+        params[:book] ||= @default_orderbook
+        params[:side] = "buy"
+        params[:type] = "limit"
+        params[:major] = amt
+        params[:price] = price
+
+        out = nil
+        post("/v3/orders", params) do |resp|
+          out = response_object(resp)
+          yield(out, resp) if block_given?
+        end
+        out
+      end
+      alias_method :buy, :bid
+
+      def ask(amt, price, params = {})
+        params[:book] ||= @default_orderbook
+        params[:side] = "sell"
+        params[:type] = "limit"
+        params[:major] = amt
+        params[:price] = price
+
+        out = nil
+        post("/v3/orders", params) do |resp|
+          out = response_object(resp)
+          yield(out, resp) if block_given?
+        end
+        out
+      end
+      alias_method :sell, :ask
+
+
       def open_orders(params = {})
         out = nil
         get("/v3/open_orders/", params) do |resp|
