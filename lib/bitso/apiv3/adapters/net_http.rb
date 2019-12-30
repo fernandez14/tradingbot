@@ -8,7 +8,7 @@ module Bitso
         @conn.use_ssl = true if @api_uri.scheme == 'https'
         @conn.cert_store = self.class.whitelisted_certificates
         @conn.ssl_version = :SSLv23_client
-        @last_nonce = nil
+        @last_nonce = 0
       end
 
       private
@@ -24,7 +24,7 @@ module Bitso
         req.body = body
 
         nonce = DateTime.now.strftime('%Q')
-        nonce = @last_nonce + 1 if nonce <= @last_nonce
+        nonce = (@last_nonce.to_i + 1).to_s if nonce.to_i <= @last_nonce.to_i
         @last_nonce = nonce
         signature = OpenSSL::HMAC.hexdigest(OpenSSL::Digest.new('sha256'), @api_secret, "#{nonce}#{method}#{path}#{body}")
         auth_header = "Bitso #{@api_key}:#{nonce}:#{signature}"
