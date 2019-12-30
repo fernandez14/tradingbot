@@ -16,7 +16,7 @@ class CurrencyLayer
     begin
       j = JSON.parse(resp.body)
       if j["success"] == true
-        return BigDecimal(j["quotes"]["MXNARS"], 5)
+        return BigDecimal(j["quotes"]["MXNARS"], 6)
       end
     rescue JSON::ParserError
     end
@@ -44,10 +44,8 @@ def getBTCMXN
   return nil
 end
 
-def calculateSpreads
+def calculateSpreads(balances, ars_mxn)
   mxn_btc = getBTCMXN
-  ars_mxn = $cl.get_quote
-  balances = getBalances
   ars_balance = BigDecimal(balances["ars"]["total"])
   btc_in_ars = BigDecimal(balances["btc"]["total"]).mult(mxn_btc, 8).mult(ars_mxn, 8)
   total_balance_in_ars = ars_balance.add(btc_in_ars, 8)
@@ -73,18 +71,44 @@ def calculateSpreads
 end
 
 $min_spread = BigDecimal("0.01")
-$max_spread = BigDecimal("0.05")
-
+$max_spread = BigDecimal("0.10")
+$order_num_threshold = 20 # lower to make orders prices tigher, increase to spread order prices
 
 # read -p "Enter Bitso API key: " -s BITSO_API_KEY && export BITSO_API_KEY && echo && read -p "Enter Bitso API secret: " -s BITSO_API_SECRET && export BITSO_API_SECRET && echo && read -p "Enter CL API key: " -s CL_API && export CL_API && echo
 $bitso = Bitso::APIv3::Client.new(ENV["BITSO_API_KEY"], ENV["BITSO_API_SECRET"])
 $cl = CurrencyLayer.new(ENV["CL_API"])
 
 while true
-  calculateSpreads
+  balances = getBalances
+  ars_mxn = $cl.get_quote
+  spreads = calculateSpreads(balances, ars_mxn)
+  ob = $bitso.orderbook(:book => "btc_mxn")
+
+  # Calculate min/max prices on bids and asks
+  min_bid_price = BigDecimal(ob.bids[$order_num_threshold]["price"])*ars_mxn*(BigDecimal("1")-spreads["bid_spread"])
+  max_bid_price = BigDecimal(ob.bids[0]["price"])*ars_mxn*(BigDecimal("1")-spreads["bid_spread"])
+  puts "Bid Prices: #{min_bid_price.to_s("F")} - #{max_bid_price.to_s("F")}"
+  min_ask_price = BigDecimal(ob.asks[0]["price"])*ars_mxn*(BigDecimal("1")+spreads["ask_spread"])
+  max_ask_price = BigDecimal(ob.asks[$order_num_threshold]["price"])*ars_mxn*(BigDecimal("1")+spreads["ask_spread"])
+  puts "Ask Prices: #{min_ask_price.to_s("F")} - #{max_ask_price.to_s("F")}"
+
+  # Cancel open orders outside of the min/max prices
+  open_orders = $bitso.open_orders(:limit => 100)
+  orders = []
+  open_orders.each do |o|
+    price = BigDecimal(o["price"])
+    if o["side"] == "buy"
+      orders.push(o["oid"]) if price < min_bid_price || price > max_bid_price
+    else
+      orders.push(o["oid"]) if price < min_ask_price || price > max_ask_price
+    end
+  end
+  $bitso.cancel_order(orders)
 
   Process.exit
-  ob = rest_api.orderbook(:book => "btc_mxn")
+
+  bid = $bitso.ask("0.001", "5123458", :book => "btc_ars")
+  ob = $bitso.orderbook(:book => "btc_mxn")
 
   puts "asks"
   ob.asks.each do |a|
