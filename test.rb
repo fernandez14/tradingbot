@@ -3,6 +3,30 @@
 require 'bitso/apiv3'
 require 'bigdecimal'
 
+$stdout.sync = true
+puts "STARTING LIQUIBOT"
+
+class CCL
+  def initialize()
+    @conn = Net::HTTP.new("www.infodolar.com", 443)
+    @conn.use_ssl = true
+  end
+
+  def get_quote
+    req = Net::HTTP::Get.new("/cotizacion-dolar-contado-con-liquidacion.aspx")
+    resp = @conn.request(req)
+    begin
+      body = resp.body.gsub(/\s+/, "").encode('UTF-8', :invalid => :replace, :undef => :replace, :replace => "")
+      if body =~ /larContadoconLiquidacin<\/span><\/td><tdclass="colCompraVenta"">\$(\d+,\d+)/
+        return BigDecimal($1.gsub(/,/,"."))
+      end
+    rescue JSON::ParserError
+    end
+    return nil
+  end
+
+end
+
 class CurrencyLayer
   def initialize(api_key)
     @api_key = api_key
@@ -10,13 +34,13 @@ class CurrencyLayer
     @conn.use_ssl = true
   end
 
-  def get_quote
-    req = Net::HTTP::Get.new("/api/live?access_key=#{@api_key}&currencies=ARS&source=MXN")
+  def get_quote(dest,source)
+    req = Net::HTTP::Get.new("/api/live?access_key=#{@api_key}&currencies=#{dest}&source=#{source}")
     resp = @conn.request(req)
     begin
       j = JSON.parse(resp.body)
       if j["success"] == true
-        return BigDecimal(j["quotes"]["MXNARS"], 6)
+        return BigDecimal(j["quotes"]["#{source}#{dest}"], 6)
       end
     rescue JSON::ParserError
     end
@@ -50,8 +74,8 @@ def calculateSpreads(balances, ars_mxn)
   btc_in_ars = BigDecimal(balances["btc"]["total"]).mult(mxn_btc, 8).mult(ars_mxn, 8)
   total_balance_in_ars = ars_balance.add(btc_in_ars, 8)
   btc_percentage = btc_in_ars.div(total_balance_in_ars, 8)
-  puts "BTC is at #{btc_percentage.mult(BigDecimal("100"), 2).to_s("F")}%"
-  puts "ARS is at #{BigDecimal("100").sub(btc_percentage.mult(BigDecimal("100"), 2), 2).to_s("F")}%"
+  puts "BTC is at #{btc_percentage.mult(BigDecimal("100"), 5).to_s("F")}%"
+  puts "ARS is at #{BigDecimal("100").sub(btc_percentage.mult(BigDecimal("100"), 5), 5).to_s("F")}%"
 
   h = Hash.new
   h["bid_spread"] = $max_spread
@@ -78,17 +102,26 @@ def getLimits
   end
 end
 
-$min_spread = BigDecimal("0.28")
-$max_spread = BigDecimal("0.40")
+$min_spread = BigDecimal("0.001")
+$max_spread = BigDecimal("0.3")
 $order_num_threshold = 10 # lower to make fewer orders with tighter, increase to spread orders and prices
 
 # read -p "Enter Bitso API key: " -s BITSO_API_KEY && export BITSO_API_KEY && echo && read -p "Enter Bitso API secret: " -s BITSO_API_SECRET && export BITSO_API_SECRET && echo && read -p "Enter CL API key: " -s CL_API && export CL_API && echo
 $bitso = Bitso::APIv3::Client.new(ENV["BITSO_API_KEY"], ENV["BITSO_API_SECRET"])
 $cl = CurrencyLayer.new(ENV["CL_API"])
+$ccl = CCL.new
 
 while true
   balances = getBalances
-  ars_mxn = $cl.get_quote
+  ars_mxn = $cl.get_quote("ARS", "MXN")
+  mxn_usd = $cl.get_quote("MXN", "USD")
+  ars_usd = $ccl.get_quote
+  puts "CL FX is #{ars_mxn.to_s("F")} ARS/MXN"
+  puts "CL FX is #{mxn_usd.to_s("F")} MXN/USD"
+  puts "CCL FX is #{ars_usd.to_s("F")} ARS/USD"
+  ars_mxn = ars_usd.div(mxn_usd, 8)
+  puts "CCL FX is #{ars_mxn.to_s("F")} ARS/MXN"
+
   spreads = calculateSpreads(balances, ars_mxn)
   ob = $bitso.orderbook(:book => "btc_mxn")
 
@@ -110,6 +143,13 @@ while true
       orders.push(o["oid"]) if price < min_bid_price || price > max_bid_price
     else
       orders.push(o["oid"]) if price < min_ask_price || price > max_ask_price
+    end
+  end
+  rem_orders = open_orders.length-orders.length
+  if rem_orders >= 100
+    while rem_orders >= 80
+      rem_orders = open_orders.length-orders.length
+      orders.push(open_orders[rand(open_orders.length)]["oid"])
     end
   end
   puts "Cancelling #{orders.length} orders that are out of the price range"
@@ -136,6 +176,8 @@ while true
       next if amount >= (btc_balance - placed)
 
       price = (BigDecimal(a["price"]) * ars_mxn * (BigDecimal("1") + spreads["ask_spread"])).truncate(2)
+      value = amount*price
+      next if value <= BigDecimal(limits["minimum_value"])
 
       puts "Adding order to sell #{amount.to_s("F")} BTC at #{price.to_s("F")} ARS"
       $bitso.ask(amount.to_s("F"), price.to_s("F"), :book => "btc_ars")
